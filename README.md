@@ -2,7 +2,7 @@ GMusicFS
 ========
 
 This is a [FUSE](http://fuse.sourceforge.net/) filesystem for
-[Google Music](music.google.com) written in Python. It utilizes the
+[Google Music](http://music.google.com) written in Python. It utilizes the
 unofficial
 [gmusicapi](https://github.com/simon-weber/Unofficial-Google-Music-API)
 written by Simon Weber.
