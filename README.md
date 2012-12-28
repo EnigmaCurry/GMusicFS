@@ -7,26 +7,27 @@ unofficial
 [gmusicapi](https://github.com/simon-weber/Unofficial-Google-Music-API)
 written by Simon Weber.
 
-This creates a filesystem that does the following:
+### This creates a filesystem that does the following:
 
- * Creates a directory of artists/albums/tracks.
- * Access the cover image for each album as cover.jpg in the album directory.
+ * Creates a directory of ```artists/<name of artist>/<albums>/<tracks>```.
+ * Access the cover image for each album as ```cover.jpg``` in the album directory.
  * Stream each track as an mp3 directly from the filesystem.
  
-What this is useful for:
+### What this is useful for:
 
  * Copying a few tracks from Google Music directly to your hard drive
-   (just use cp.)
- * Streaming music with mplayer or another simple music player.
+   (using a file manager or ```cp``` directly.)
+ * Streaming music with ```mplayer``` or another simple music player.
  
-What this is NOT useful for (yet..):
+### What this is NOT useful for (yet..):
 
  * Importing all your music into iTunes, banshee, amarok etc. These
    big media players will attempt to read all the ID3 information from
-   the files not knowing that all the files are not sitting on your
-   local hard drive. It might work, but it's going to be extremely
-   inefficient and this might bring down the banhammer from Google..
- * Importing new music. The filesystem is read-only.
+   the files and not knowing that all the files are on a remot server. 
+   It might work, but it's going to be extremely inefficient and this
+   might bring down the banhammer from Google..
+ * Importing new music. The filesystem is read-only (this might change 
+   in a new version.)
  * Random-access within the mp3 files. You cannot seek() inside the
    mp3 files, they will only stream from the beginning of the file.
    
