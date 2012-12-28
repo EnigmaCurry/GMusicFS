@@ -1,0 +1,5 @@
+GMusicFS.egg-info
+*~
+*.pyc
+*.log
+notmine/
