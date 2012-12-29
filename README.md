@@ -78,6 +78,7 @@ Secure the configuration file so that no one else can read it
 chmod 600 ~/.gmusicfs
 ```
 
+### Command line parameters:
 
 ```
 usage: gmusicfs.py [-h] [-f] [-v] [-vv] mountpoint
