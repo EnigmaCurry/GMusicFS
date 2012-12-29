@@ -88,7 +88,7 @@ chmod 600 ~/.gmusicfs
 ### Command line parameters:
 
 ```
-usage: gmusicfs [-h] [-f] [-v] [-vv] mountpoint
+usage: gmusicfs [-h] [-f] [-v] [-vv] [-t] mountpoint
 
 GMusicFS
 
@@ -100,6 +100,7 @@ optional arguments:
   -f, --foreground    Don't daemonize, run in the foreground.
   -v, --verbose       Be a little verbose
   -vv, --veryverbose  Be very verbose
+  -t, --truefilesize  Report true filesizes (slower directory reads)
 ```
 
 Example
