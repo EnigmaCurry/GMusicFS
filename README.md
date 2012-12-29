@@ -72,6 +72,12 @@ password = your_password
 If you use 2-factor authentication, make sure you use an application
 specific password.
 
+Secure the configuration file so that no one else can read it
+(GMusicFS will complain about this if you forget):
+```
+chmod 600 ~/.gmusicfs
+```
+
 
 ```
 usage: gmusicfs.py [-h] [-f] [-v] [-vv] mountpoint
