@@ -23,14 +23,21 @@ written by Simon Weber.
 
  * Importing all your music into iTunes, banshee, amarok etc. These
    big media players will attempt to read all the ID3 information from
-   the files and not knowing that all the files are on a remot server. 
+   the files and not knowing that all the files are on a remote server. 
    It might work, but it's going to be extremely inefficient and this
    might bring down the banhammer from Google..
  * Importing new music. The filesystem is read-only (this might change 
    in a new version.)
  * Random-access within the mp3 files. You cannot seek() inside the
    mp3 files, they will only stream from the beginning of the file.
-   
+
+GMusicFS doesn't implement any caching. Copying a file should always work,
+because latency doesn't matter, but if you're streaming the music, you 
+may want to turn on your player's caching system (eg. mplayer -cache 200.)
+You may notice a few blips in the sound during the first few seconds of
+each song without it. If you're on a low latency connection this might not 
+affect you.
+
 Installation
 ------------
 
@@ -72,9 +79,16 @@ password = your_password
 If you use 2-factor authentication, make sure you use an application
 specific password.
 
+Secure the configuration file so that no one else can read it
+(GMusicFS will complain about this if you forget):
+```
+chmod 600 ~/.gmusicfs
+```
+
+### Command line parameters:
 
 ```
-usage: gmusicfs.py [-h] [-f] [-v] [-vv] mountpoint
+usage: gmusicfs [-h] [-f] [-v] [-vv] mountpoint
 
 GMusicFS
 
