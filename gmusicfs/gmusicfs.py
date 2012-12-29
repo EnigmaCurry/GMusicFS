@@ -11,9 +11,10 @@ from fuse import FUSE, FuseOSError, Operations, LoggingMixIn, fuse_get_context
 import time
 from gmusicapi.api import Api as GoogleMusicAPI
 import argparse
+import operator
 
 import logging
-logging.basicConfig(level=logging.WARNING)
+logging.basicConfig(level=logging.DEBUG)
 log = logging.getLogger('gmusicfs')
 
 class NoCredentialException(Exception):
@@ -62,7 +63,25 @@ class Album(object):
         except:
             url = None
         return url
-        
+
+    def get_year(self):
+        """Get the year of the album.
+        Aggregate all the track years and pick the most popular year 
+        among them"""
+        years = {} # year -> count
+        for track in self.get_tracks():
+            y = track.get('year', None)
+            if y:
+                count = years.get(y, 0)
+                years[y] = count + 1
+        top_years = sorted(years.items(), 
+                           key=operator.itemgetter(1), reverse=True)
+        try:
+            top_year = top_years[0][0]
+        except IndexError:
+            top_year = 0
+        return top_year
+
     def __repr__(self):
         return u'<Album \'{title}\'>'.format(title=self.normtitle)
 
@@ -138,6 +157,7 @@ class MusicLibrary(object):
         return self.__albums
 
     def get_artist_albums(self, artist):
+        log.debug(artist)
         return self.__artists[artist]
 
 class GMusicFS(LoggingMixIn, Operations):
@@ -242,9 +262,12 @@ class GMusicFS(LoggingMixIn, Operations):
             return  ['.','..'] + self.library.get_artists().keys()
         elif artist_dir_m:
             # Artist directory, lists albums.
-            albums = self.library.get_artists()[
-                artist_dir_m.groupdict()['artist']]
-            return ['.','..'] + albums.keys()
+            albums = self.library.get_artist_albums(
+                artist_dir_m.groupdict()['artist'])
+            # Sort albums by year:
+            album_dirs = ['{year:04d} - {name}'.format(
+                year=a.get_year(), name=a.normtitle) for a in albums.values()]
+            return ['.','..'] + album_dirs
         elif artist_album_dir_m:
             # Album directory, lists tracks.
             parts = artist_album_dir_m.groupdict()
@@ -278,12 +301,15 @@ def main():
     if args.veryverbose:
         log.setLevel(logging.DEBUG)
         logging.getLogger('gmusicapi.Api').setLevel(logging.DEBUG)
+        logging.getLogger('fuse').setLevel(logging.DEBUG)
     elif args.verbose:
         log.setLevel(logging.INFO)
         logging.getLogger('gmusicapi.Api').setLevel(logging.WARNING)
+        logging.getLogger('fuse').setLevel(logging.INFO)
     else:
         log.setLevel(logging.WARNING)
         logging.getLogger('gmusicapi.Api').setLevel(logging.WARNING)
+        logging.getLogger('fuse').setLevel(logging.WARNING)
         
     fuse = FUSE(GMusicFS(mountpoint), mountpoint, foreground=args.foreground, 
                 ro=True, nothreads=True)
