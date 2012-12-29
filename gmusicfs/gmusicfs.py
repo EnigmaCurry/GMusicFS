@@ -201,6 +201,7 @@ class GMusicFS(LoggingMixIn, Operations):
             'st_mode' : (S_IFDIR | 0755),
             'st_nlink' : 2 }
         date = time.time()
+        st['st_ctime'] = st['st_mtime'] = st['st_atime'] = date
 
         if path == '/':
             pass
@@ -217,7 +218,10 @@ class GMusicFS(LoggingMixIn, Operations):
             track = album.get_track(parts['track'])
             st = {
                 'st_mode' : (S_IFREG | 0444),
-                'st_size' : track.get('bytes', 20000000) }
+                'st_size' : track.get('bytes', 20000000),
+                'st_ctime' : track['creationDate'] / 1000000,
+                'st_mtime' : track['creationDate'] / 1000000,
+                'st_atime' : track['lastPlayed'] / 1000000}
         elif artist_album_image_m:
             st = {
                 'st_mode' : (S_IFREG | 0444),
@@ -225,8 +229,6 @@ class GMusicFS(LoggingMixIn, Operations):
         else:
             raise FuseOSError(ENOENT)
 
-        # Set some create, modify, and access times
-        st['st_ctime'] = st['st_mtime'] = st['st_atime'] = date
         return st
 
     def open(self, path, fh):
