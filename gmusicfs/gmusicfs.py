@@ -166,11 +166,11 @@ class GMusicFS(LoggingMixIn, Operations):
         Operations.__init__(self)
         self.artist_dir = re.compile('^/artists/(?P<artist>[^/]+)$')
         self.artist_album_dir = re.compile(
-            '^/artists/(?P<artist>[^/]+)/[0-9]{4} - (?P<album>[^/]+)$')
+            '^/artists/(?P<artist>[^/]+)/(?P<year>[0-9]{4}) - (?P<album>[^/]+)$')
         self.artist_album_track = re.compile(
-            '^/artists/(?P<artist>[^/]+)/[0-9]{4} - (?P<album>[^/]+)/(?P<track>[^/]+\.mp3)$')
+            '^/artists/(?P<artist>[^/]+)/(?P<year>[0-9]{4}) - (?P<album>[^/]+)/(?P<track>[^/]+\.mp3)$')
         self.artist_album_image = re.compile(
-            '^/artists/(?P<artist>[^/]+)/[0-9]{4} - (?P<album>[^/]+)/(?P<image>[^/]+\.jpg)$')
+            '^/artists/(?P<artist>[^/]+)/(?P<year>[0-9]{4}) - (?P<album>[^/]+)/(?P<image>[^/]+\.jpg)$')
 
         self.__open_files = {} # path -> urllib2_obj
 
