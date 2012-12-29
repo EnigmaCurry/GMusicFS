@@ -22,8 +22,8 @@ class NoCredentialException(Exception):
 
 class Album(object):
     'Keep record of Album information'
-    def __init__(self, api, normtitle):
-        self.api = api
+    def __init__(self, library, normtitle):
+        self.library = library
         self.normtitle = normtitle
         self.__tracks = []
         self.__sorted = True
@@ -34,10 +34,18 @@ class Album(object):
         self.__tracks.append(track)
         self.__sorted = False
 
-    def get_tracks(self):
+    def get_tracks(self, get_size=False):
         # Re-sort by track number:
         if not self.__sorted:
             self.__tracks.sort(key=lambda t: t.get('track'))
+        # Retrieve and remember the filesize of each track:
+        if get_size and self.library.true_file_size:
+            for t in self.__tracks:
+                if not t.has_key('bytes'):
+                    r = urllib2.Request(self.get_track_stream(t))
+                    r.get_method = lambda: 'HEAD'
+                    u = urllib2.urlopen(r)
+                    t['bytes'] = int(u.headers['Content-Length'])
         return self.__tracks
 
     def get_track(self, filename):
@@ -53,7 +61,7 @@ class Album(object):
 
     def get_track_stream(self, track):
         "Get the track stream URL"
-        return self.api.get_stream_url(track['id'])
+        return self.library.api.get_stream_url(track['id'])
 
     def get_cover_url(self):
         'Get the album cover image URL'
@@ -88,11 +96,12 @@ class Album(object):
 class MusicLibrary(object):
     'Read information about your Google Music library'
     
-    def __init__(self, username=None, password=None):
+    def __init__(self, username=None, password=None, true_file_size=False):
         self.__artists = {} # 'artist name' -> {'album name' : Album(), ...}
         self.__albums = [] # [Album(), ...]
         self.__login(username, password)
         self.__aggregate_albums()
+        self.true_file_size = true_file_size
 
     def __login(self, username=None, password=None):
         # If credentials are not specified, get them from $HOME/.gmusicfs
@@ -137,7 +146,7 @@ class MusicLibrary(object):
                 if artist == '':
                     artist = 'unknown'
                 album = all_artist_albums[key] = Album(
-                    self.api, track['albumNorm'])
+                    self, track['albumNorm'])
                 self.__albums.append(album)
                 artist_albums = self.__artists.get(artist, None)
                 if artist_albums:
@@ -162,7 +171,8 @@ class MusicLibrary(object):
 
 class GMusicFS(LoggingMixIn, Operations):
     'Google Music Filesystem'
-    def __init__(self, path, username=None, password=None):
+    def __init__(self, path, username=None, password=None, 
+                 true_file_size=False):
         Operations.__init__(self)
         self.artist_dir = re.compile('^/artists/(?P<artist>[^/]+)$')
         self.artist_album_dir = re.compile(
@@ -175,7 +185,8 @@ class GMusicFS(LoggingMixIn, Operations):
         self.__open_files = {} # path -> urllib2_obj
 
         # login to google music and parse the tracks:
-        self.library = MusicLibrary(username, password)
+        self.library = MusicLibrary(username, password, 
+                                    true_file_size=true_file_size)
         log.info("Filesystem ready : %s" % path)
 
     def getattr(self, path, fh=None):
@@ -200,9 +211,13 @@ class GMusicFS(LoggingMixIn, Operations):
         elif artist_album_dir_m:
             pass
         elif artist_album_track_m:
+            parts = artist_album_track_m.groupdict()
+            album = self.library.get_artists()[
+                parts['artist']][parts['album']]
+            track = album.get_track(parts['track'])
             st = {
                 'st_mode' : (S_IFREG | 0444),
-                'st_size' : 200000000 }
+                'st_size' : track.get('bytes', 20000000) }
         elif artist_album_image_m:
             st = {
                 'st_mode' : (S_IFREG | 0444),
@@ -274,7 +289,7 @@ class GMusicFS(LoggingMixIn, Operations):
             album = self.library.get_artists()[
                 parts['artist']][parts['album']]
             files = ['.','..']
-            for track in album.get_tracks():
+            for track in album.get_tracks(get_size=True):
                 files.append('%03d - %s.mp3' % (track['track'], 
                                                 track['titleNorm']))
             # Include cover image:
@@ -293,6 +308,9 @@ def main():
                         action='store_true', dest='verbose')
     parser.add_argument('-vv', '--veryverbose', help='Be very verbose',
                         action='store_true', dest='veryverbose')
+    parser.add_argument('-t', '--truefilesize', help='Report true filesizes'
+                        ' (slower directory reads)',
+                        action='store_true', dest='true_file_size')
     args = parser.parse_args()
 
     mountpoint = os.path.abspath(args.mountpoint)
@@ -311,7 +329,8 @@ def main():
         logging.getLogger('gmusicapi.Api').setLevel(logging.WARNING)
         logging.getLogger('fuse').setLevel(logging.WARNING)
         
-    fuse = FUSE(GMusicFS(mountpoint), mountpoint, foreground=args.foreground, 
+    fuse = FUSE(GMusicFS(mountpoint, true_file_size=args.true_file_size), 
+                mountpoint, foreground=args.foreground, 
                 ro=True, nothreads=True)
 
 if __name__ == '__main__':
