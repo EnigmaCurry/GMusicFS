@@ -88,7 +88,7 @@ chmod 600 ~/.gmusicfs
 ### Command line parameters:
 
 ```
-usage: gmusicfs.py [-h] [-f] [-v] [-vv] mountpoint
+usage: gmusicfs [-h] [-f] [-v] [-vv] mountpoint
 
 GMusicFS
 
