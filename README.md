@@ -36,7 +36,7 @@ because latency doesn't matter, but if you're streaming the music, you
 may want to turn on your player's caching system (eg. mplayer -cache 200.)
 You may notice a few blips in the sound during the first few seconds of
 each song without it. If you're on a low latency connection this might not 
-matter.
+affect you.
 
 Installation
 ------------
