@@ -17,6 +17,10 @@ import logging
 logging.basicConfig(level=logging.DEBUG)
 log = logging.getLogger('gmusicfs')
 
+def formatNames(string_from):
+    return re.sub('/', '-', string_from)
+
+
 class NoCredentialException(Exception):
     pass
 
@@ -24,7 +28,7 @@ class Album(object):
     'Keep record of Album information'
     def __init__(self, library, normtitle):
         self.library = library
-        self.normtitle = normtitle
+        self.normtitle = formatNames(normtitle)
         self.__tracks = []
         self.__sorted = True
         self.__filename_re = re.compile("^[0-9]{3} - (.*)\.mp3$")
@@ -55,7 +59,7 @@ class Album(object):
         if m:
             title = m.groups()[0]
             for track in self.get_tracks():
-                if track['titleNorm'] == title:
+                if formatNames(track['titleNorm']) == title:
                     return track
         return None
 
@@ -138,19 +142,19 @@ class MusicLibrary(object):
         tracks = self.api.get_all_songs()
         for track in tracks:
             # Get the Album object if it already exists:
-            key = '%s|||%s' % (track['artistNorm'], track['albumNorm'])
+            key = '%s|||%s' % (formatNames(track['artistNorm']), formatNames(track['albumNorm']))
             album = all_artist_albums.get(key, None)
             if not album:
                 # New Album
-                artist = track['artistNorm']
+                artist = formatNames(track['artistNorm'])
                 if artist == '':
                     artist = 'unknown'
                 album = all_artist_albums[key] = Album(
-                    self, track['albumNorm'])
+                    self, formatNames(track['albumNorm']))
                 self.__albums.append(album)
                 artist_albums = self.__artists.get(artist, None)
                 if artist_albums:
-                    artist_albums[album.normtitle] = album
+                    artist_albums[formatNames(album.normtitle)] = album
                 else:
                     self.__artists[artist] = {album.normtitle: album}
                     artist_albums = self.__artists[artist]
@@ -205,7 +209,7 @@ class GMusicFS(LoggingMixIn, Operations):
 
         if path == '/':
             pass
-        if path == '/artists':
+        elif path == '/artists':
             pass
         elif artist_dir_m:
             pass
@@ -282,8 +286,8 @@ class GMusicFS(LoggingMixIn, Operations):
             albums = self.library.get_artist_albums(
                 artist_dir_m.groupdict()['artist'])
             # Sort albums by year:
-            album_dirs = ['{year:04d} - {name}'.format(
-                year=a.get_year(), name=a.normtitle) for a in albums.values()]
+            album_dirs = [u'{year:04d} - {name}'.format(
+                year=a.get_year(), name=formatNames(a.normtitle)) for a in albums.values()]
             return ['.','..'] + album_dirs
         elif artist_album_dir_m:
             # Album directory, lists tracks.
@@ -293,7 +297,7 @@ class GMusicFS(LoggingMixIn, Operations):
             files = ['.','..']
             for track in album.get_tracks(get_size=True):
                 files.append('%03d - %s.mp3' % (track['track'], 
-                                                track['titleNorm']))
+                                                formatNames(track['titleNorm'])))
             # Include cover image:
             cover = album.get_cover_url()
             if cover:
