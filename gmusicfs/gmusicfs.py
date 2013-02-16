@@ -209,7 +209,7 @@ class GMusicFS(LoggingMixIn, Operations):
 
         if path == '/':
             pass
-        if path == '/artists':
+        elif path == '/artists':
             pass
         elif artist_dir_m:
             pass
