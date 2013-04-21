@@ -9,7 +9,7 @@ from errno import ENOENT
 from stat import S_IFDIR, S_IFREG
 from fuse import FUSE, FuseOSError, Operations, LoggingMixIn, fuse_get_context
 import time
-from gmusicapi.api import Api as GoogleMusicAPI
+from gmusicapi import Webclient as GoogleMusicAPI
 import argparse
 import operator
 
@@ -132,7 +132,7 @@ class MusicLibrary(object):
             
         self.api = GoogleMusicAPI()
         log.info('Logging in...')
-        self.api.login(username, password, perform_upload_auth=False)
+        self.api.login(username, password)
         log.info('Login successful.')
         
     def __aggregate_albums(self):
