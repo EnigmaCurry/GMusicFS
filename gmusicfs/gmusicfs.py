@@ -317,6 +317,9 @@ def main():
     parser.add_argument('-t', '--truefilesize', help='Report true filesizes'
                         ' (slower directory reads)',
                         action='store_true', dest='true_file_size')
+    parser.add_argument('--allusers', help='Allow all system users access to files'
+                        ' (Requires user_allow_other set in /etc/fuse.conf)',
+                        action='store_true', dest='allusers')
     args = parser.parse_args()
 
     mountpoint = os.path.abspath(args.mountpoint)
@@ -337,7 +340,7 @@ def main():
         
     fuse = FUSE(GMusicFS(mountpoint, true_file_size=args.true_file_size), 
                 mountpoint, foreground=args.foreground, 
-                ro=True, nothreads=True)
+                ro=True, nothreads=True, allow_other=args.allusers)
 
 if __name__ == '__main__':
     main()
