@@ -151,12 +151,15 @@ class MusicLibrary(object):
         log.info('Gathering track information...')
         tracks = self.api.get_all_songs()
         for track in tracks:
+            # Prefer the album artist over the track artist if there is one:
+            artist = track['albumArtistNorm']
+            if artist.strip() == '':
+                artist = track['artistNorm']
             # Get the Album object if it already exists:
-            key = '%s|||%s' % (formatNames(track['artistNorm']), formatNames(track['albumNorm']))
+            key = '%s|||%s' % (formatNames(artist), formatNames(track['albumNorm']))
             album = all_artist_albums.get(key, None)
             if not album:
                 # New Album
-                artist = formatNames(track['artistNorm'])
                 if artist == '':
                     artist = 'unknown'
                 album = all_artist_albums[key] = Album(
