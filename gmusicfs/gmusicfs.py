@@ -7,13 +7,19 @@ import urllib2
 import ConfigParser
 from errno import ENOENT
 from stat import S_IFDIR, S_IFREG
-from fuse import FUSE, FuseOSError, Operations, LoggingMixIn, fuse_get_context
 import time
-from gmusicapi import Webclient as GoogleMusicAPI
 import argparse
 import operator
-
+import shutil
+import tempfile
+import threading
 import logging
+
+from fuse import FUSE, FuseOSError, Operations, LoggingMixIn, fuse_get_context
+from gmusicapi import Webclient as GoogleMusicAPI
+
+import fifo
+
 logging.basicConfig(level=logging.DEBUG)
 log = logging.getLogger('gmusicfs')
 
@@ -100,14 +106,18 @@ class Album(object):
 class MusicLibrary(object):
     'Read information about your Google Music library'
     
-    def __init__(self, username=None, password=None, true_file_size=False):
-        self.__artists = {} # 'artist name' -> {'album name' : Album(), ...}
-        self.__albums = [] # [Album(), ...]
-        self.__login(username, password)
-        self.__aggregate_albums()
+    def __init__(self, username=None, password=None, true_file_size=False, scan=True):
+        self.__login_and_setup(username, password)
+        if scan:
+            self.rescan()
         self.true_file_size = true_file_size
 
-    def __login(self, username=None, password=None):
+    def rescan(self):
+        self.__artists = {} # 'artist name' -> {'album name' : Album(), ...}
+        self.__albums = [] # [Album(), ...]
+        self.__aggregate_albums()
+
+    def __login_and_setup(self, username=None, password=None):
         # If credentials are not specified, get them from $HOME/.gmusicfs
         if not username or not password:
             cred_path = os.path.join(os.path.expanduser('~'), '.gmusicfs')
@@ -121,15 +131,15 @@ class MusicLibrary(object):
                 raise NoCredentialException(
                     'Config file is not protected. Please run: '
                     'chmod 600 %s' % cred_path)
-            config = ConfigParser.ConfigParser()
-            config.read(cred_path)
-            username = config.get('credentials','username')
-            password = config.get('credentials','password')
+            self.config = ConfigParser.ConfigParser()
+            self.config.read(cred_path)
+            username = self.config.get('credentials','username')
+            password = self.config.get('credentials','password')
             if not username or not password:
                 raise NoCredentialException(
                     'No username/password could be read from config file'
                     ': %s' % cred_path)
-            
+                
         self.api = GoogleMusicAPI()
         log.info('Logging in...')
         self.api.login(username, password)
@@ -173,6 +183,9 @@ class MusicLibrary(object):
         log.debug(artist)
         return self.__artists[artist]
 
+    def cleanup(self):
+        pass
+
 class GMusicFS(LoggingMixIn, Operations):
     'Google Music Filesystem'
     def __init__(self, path, username=None, password=None, 
@@ -192,6 +205,9 @@ class GMusicFS(LoggingMixIn, Operations):
         self.library = MusicLibrary(username, password, 
                                     true_file_size=true_file_size)
         log.info("Filesystem ready : %s" % path)
+
+    def cleanup(self):
+        self.library.cleanup()
 
     def getattr(self, path, fh=None):
         'Get info about a file/dir'
@@ -252,9 +268,26 @@ class GMusicFS(LoggingMixIn, Operations):
             url = album.get_cover_url()
         else:
             RuntimeError('unexpected opening of path: %r' % path)
-        u = self.__open_files[fh] = urllib2.urlopen(url)
-        u.bytes_read = 0
+
+        #Check for multi-part 
+        if isinstance(url, list):
+            self.__open_files[fh] = self.__open_multi_part(url, path)
+        else:
+            u = self.__open_files[fh] = urllib2.urlopen(url)
+            u.bytes_read = 0
         return fh
+
+    def __open_multi_part(self, urls, path):
+        """Starts a thread to download a multi-part track (Google Play All
+        Access) into a single file in the cache directory and return
+        an open file handle for it while it downloads.
+        """
+        buf = fifo.Buffer()
+        # Start downloading the multi part track in another thread:
+        downloader = AllAccessTrackDownloader(urls, buf, path)
+        downloader.start()
+        # Return the buffer, while the download is still happening:
+        return buf
 
     def release(self, path, fh):
         u = self.__open_files.get(fh, None)
@@ -264,12 +297,17 @@ class GMusicFS(LoggingMixIn, Operations):
     
     def read(self, path, size, offset, fh):
         u = self.__open_files.get(fh, None)
-        if u:
-            buf = u.read(size)
-            u.bytes_read += size
-            return buf
-        else:
+        if u is None:
             raise RuntimeError('unexpected path: %r' % path)
+        else:
+            buf = u.read(size)
+            try:
+                u.bytes_read += size
+            except AttributeError:
+                # Only urllib2 files need this attribute, harmless to
+                # ignore it.
+                pass
+            return buf
 
     def readdir(self, path, fh):
         artist_dir_m = self.artist_dir.match(path)
@@ -303,7 +341,35 @@ class GMusicFS(LoggingMixIn, Operations):
             if cover:
                 files.append('cover.jpg')
             return files
-    
+
+class AllAccessTrackDownloader(threading.Thread):
+    """Multi-part track downloader"""
+    def __init__(self, urls, writer, path, buffer_bytes=32000):
+        self.urls = urls
+        self.writer = writer
+        self.path = path
+        threading.Thread.__init__(self)
+        self.buffer_bytes = buffer_bytes
+
+    def run(self):
+        byte_num = 0
+        for url in self.urls:
+            range_start, range_end = re.search(r'range=([0-9]*)-([0-9]*)', url).groups()
+            range_start, range_end = (int(range_start), int(range_end))
+            log.info("Downloading multi-part track: %s" % url)
+            u = urllib2.urlopen(url)
+            # There is overlap between parts, so skip the part that we already have:
+            u.read(byte_num - range_start)
+            # Buffer the rest of the file and write it as it comes:
+            while True:
+                data = u.read(self.buffer_bytes)
+                if data == '':
+                    break
+                byte_num += len(data)
+                self.writer.write(data)
+        log.info("Done downloading multi-part track: %s" % self.path)
+        self.writer.close()
+
 def main():
     parser = argparse.ArgumentParser(description='GMusicFS')
     parser.add_argument('mountpoint', help='The location to mount to')
@@ -338,9 +404,12 @@ def main():
         logging.getLogger('gmusicapi.Api').setLevel(logging.WARNING)
         logging.getLogger('fuse').setLevel(logging.WARNING)
         
-    fuse = FUSE(GMusicFS(mountpoint, true_file_size=args.true_file_size), 
-                mountpoint, foreground=args.foreground, 
-                ro=True, nothreads=True, allow_other=args.allusers)
+    fs = GMusicFS(mountpoint, true_file_size=args.true_file_size)
+    try:
+        fuse = FUSE(fs, mountpoint, foreground=args.foreground, 
+                    ro=True, nothreads=True, allow_other=args.allusers)
+    finally:
+        fs.cleanup()
 
 if __name__ == '__main__':
     main()
