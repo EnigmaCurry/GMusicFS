@@ -71,7 +71,7 @@ class Album(object):
 
     def get_track_stream(self, track):
         "Get the track stream URL"
-        return self.library.api.get_stream_url(track['id'])
+        return self.library.api.get_stream_urls(track['id'])
 
     def get_cover_url(self):
         'Get the album cover image URL'
@@ -106,7 +106,12 @@ class Album(object):
 class MusicLibrary(object):
     'Read information about your Google Music library'
     
-    def __init__(self, username=None, password=None, true_file_size=False, scan=True):
+    def __init__(self, username=None, password=None,
+                 true_file_size=False, scan=True, verbose=0):
+        self.verbose = False
+        if verbose > 1:
+            self.verbose = True
+
         self.__login_and_setup(username, password)
         if scan:
             self.rescan()
@@ -140,7 +145,7 @@ class MusicLibrary(object):
                     'No username/password could be read from config file'
                     ': %s' % cred_path)
                 
-        self.api = GoogleMusicAPI()
+        self.api = GoogleMusicAPI(debug_logging=self.verbose)
         log.info('Logging in...')
         self.api.login(username, password)
         log.info('Login successful.')
@@ -192,7 +197,7 @@ class MusicLibrary(object):
 class GMusicFS(LoggingMixIn, Operations):
     'Google Music Filesystem'
     def __init__(self, path, username=None, password=None, 
-                 true_file_size=False):
+                 true_file_size=False, verbose=0):
         Operations.__init__(self)
         self.artist_dir = re.compile('^/artists/(?P<artist>[^/]+)$')
         self.artist_album_dir = re.compile(
@@ -206,7 +211,7 @@ class GMusicFS(LoggingMixIn, Operations):
 
         # login to google music and parse the tracks:
         self.library = MusicLibrary(username, password, 
-                                    true_file_size=true_file_size)
+                                    true_file_size=true_file_size, verbose=verbose)
         log.info("Filesystem ready : %s" % path)
 
     def cleanup(self):
@@ -263,20 +268,20 @@ class GMusicFS(LoggingMixIn, Operations):
             album = self.library.get_artists()[
                 parts['artist']][parts['album']]
             track = album.get_track(parts['track'])
-            url = album.get_track_stream(track)
+            urls = album.get_track_stream(track)
         elif artist_album_image_m:
             parts = artist_album_image_m.groupdict()
             album = self.library.get_artists()[
                 parts['artist']][parts['album']]
-            url = album.get_cover_url()
+            urls = [album.get_cover_url()]
         else:
             RuntimeError('unexpected opening of path: %r' % path)
 
         #Check for multi-part 
-        if isinstance(url, list):
-            self.__open_files[fh] = self.__open_multi_part(url, path)
+        if len(urls) > 1:
+            self.__open_files[fh] = self.__open_multi_part(urls, path)
         else:
-            u = self.__open_files[fh] = urllib2.urlopen(url)
+            u = self.__open_files[fh] = urllib2.urlopen(urls[0])
             u.bytes_read = 0
         return fh
 
@@ -396,18 +401,23 @@ def main():
     # Set verbosity:
     if args.veryverbose:
         log.setLevel(logging.DEBUG)
-        logging.getLogger('gmusicapi.Api').setLevel(logging.DEBUG)
+        logging.getLogger('gmusicapi').setLevel(logging.DEBUG)
         logging.getLogger('fuse').setLevel(logging.DEBUG)
+        logging.getLogger('requests.packages.urllib3').setLevel(logging.WARNING)
+        verbosity = 10
     elif args.verbose:
         log.setLevel(logging.INFO)
-        logging.getLogger('gmusicapi.Api').setLevel(logging.WARNING)
+        logging.getLogger('gmusicapi').setLevel(logging.WARNING)
         logging.getLogger('fuse').setLevel(logging.INFO)
+        logging.getLogger('requests.packages.urllib3').setLevel(logging.WARNING)
+        verbosity = 1
     else:
         log.setLevel(logging.WARNING)
-        logging.getLogger('gmusicapi.Api').setLevel(logging.WARNING)
+        logging.getLogger('gmusicapi').setLevel(logging.WARNING)
         logging.getLogger('fuse').setLevel(logging.WARNING)
-        
-    fs = GMusicFS(mountpoint, true_file_size=args.true_file_size)
+        logging.getLogger('requests.packages.urllib3').setLevel(logging.WARNING)
+        verbosity = 0
+    fs = GMusicFS(mountpoint, true_file_size=args.true_file_size, verbose=verbosity)
     try:
         fuse = FUSE(fs, mountpoint, foreground=args.foreground, 
                     ro=True, nothreads=True, allow_other=args.allusers)
