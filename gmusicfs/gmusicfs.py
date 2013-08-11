@@ -16,12 +16,14 @@ import threading
 import logging
 
 from fuse import FUSE, FuseOSError, Operations, LoggingMixIn, fuse_get_context
-from gmusicapi import Webclient as GoogleMusicAPI
+from gmusicapi import Mobileclient as GoogleMusicAPI
+from gmusicapi import Webclient as GoogleMusicWebAPI
 
 import fifo
 
 logging.basicConfig(level=logging.DEBUG)
 log = logging.getLogger('gmusicfs')
+deviceId=None
 
 def formatNames(string_from):
     return re.sub('/', '-', string_from)
@@ -65,19 +67,22 @@ class Album(object):
         if m:
             title = m.groups()[0]
             for track in self.get_tracks():
-                if formatNames(track['titleNorm']) == title:
+                if formatNames(track['title'].lower()) == title:
                     return track
         return None
 
     def get_track_stream(self, track):
         "Get the track stream URL"
-        return self.library.api.get_stream_urls(track['id'])
+        print deviceId
+        print deviceId
+        print deviceId
+        return self.library.api.get_stream_url(track['id'], deviceId)
 
     def get_cover_url(self):
         'Get the album cover image URL'
         try:
             #Assume the first track has the right cover URL:
-            url = "http:%s" % self.__tracks[0]['albumArtUrl']
+            url = "%s" % self.__tracks[0]['albumArtRef'][0]['url']
         except:
             url = None
         return url
@@ -143,9 +148,15 @@ class MusicLibrary(object):
             self.config.read(cred_path)
             username = self.config.get('credentials','username')
             password = self.config.get('credentials','password')
+            global deviceId
+            deviceId = self.config.get('credentials','deviceId')
             if not username or not password:
                 raise NoCredentialException(
                     'No username/password could be read from config file'
+                    ': %s' % cred_path)
+            if not deviceId:
+                raise NoCredentialException(
+                    'No deviceId could be read from config file'
                     ': %s' % cred_path)
 
         self.api = GoogleMusicAPI(debug_logging=self.verbose)
@@ -160,18 +171,18 @@ class MusicLibrary(object):
         tracks = self.api.get_all_songs()
         for track in tracks:
             # Prefer the album artist over the track artist if there is one:
-            artist = track['albumArtistNorm']
+            artist = formatNames(track['albumArtist'].lower())
             if artist.strip() == '':
-                artist = track['artistNorm']
+                artist = formatNames(track['artist'].lower())
             # Get the Album object if it already exists:
-            key = '%s|||%s' % (formatNames(artist), formatNames(track['albumNorm']))
+            key = '%s|||%s' % (formatNames(artist), formatNames(track['album'].lower()))
             album = all_artist_albums.get(key, None)
             if not album:
                 # New Album
                 if artist == '':
                     artist = 'unknown'
                 album = all_artist_albums[key] = Album(
-                    self, formatNames(track['albumNorm']))
+                    self, formatNames(track['album'].lower()))
                 self.__albums.append(album)
                 artist_albums = self.__artists.get(artist, None)
                 if artist_albums:
@@ -249,10 +260,10 @@ class GMusicFS(LoggingMixIn, Operations):
             track = album.get_track(parts['track'])
             st = {
                 'st_mode' : (S_IFREG | 0444),
-                'st_size' : track.get('bytes', 20000000),
-                'st_ctime' : track['creationDate'] / 1000000,
-                'st_mtime' : track['creationDate'] / 1000000,
-                'st_atime' : track['lastPlayed'] / 1000000}
+                'st_size' : int(track['estimatedSize']),
+                'st_ctime' : int(track['creationTimestamp']) / 1000000,
+                'st_mtime' : int(track['creationTimestamp']) / 1000000,
+                'st_atime' : int(track['recentTimestamp']) / 1000000}
         elif artist_album_image_m:
             st = {
                 'st_mode' : (S_IFREG | 0444),
@@ -271,21 +282,23 @@ class GMusicFS(LoggingMixIn, Operations):
             album = self.library.get_artists()[
                 parts['artist']][parts['album']]
             track = album.get_track(parts['track'])
-            urls = album.get_track_stream(track)
+            url = album.get_track_stream(track)
         elif artist_album_image_m:
             parts = artist_album_image_m.groupdict()
             album = self.library.get_artists()[
                 parts['artist']][parts['album']]
-            urls = [album.get_cover_url()]
+            url = album.get_cover_url()
+            print url
+            print url
+            print url
+            print url
+            print url
         else:
             RuntimeError('unexpected opening of path: %r' % path)
 
-        #Check for multi-part
-        if len(urls) > 1:
-            self.__open_files[fh] = self.__open_multi_part(urls, path)
-        else:
-            u = self.__open_files[fh] = urllib2.urlopen(urls[0])
-            u.bytes_read = 0
+        u = self.__open_files[fh] = urllib2.urlopen(url)
+        u.bytes_read = 0
+
         return fh
 
     def __open_multi_part(self, urls, path):
@@ -345,8 +358,7 @@ class GMusicFS(LoggingMixIn, Operations):
                 parts['artist']][parts['album']]
             files = ['.','..']
             for track in album.get_tracks(get_size=True):
-                files.append('%03d - %s.mp3' % (track['track'],
-                                                formatNames(track['titleNorm'])))
+                files.append('%03d - %s.mp3' % (track['trackNumber'], formatNames(track['title'].lower())))
             # Include cover image:
             cover = album.get_cover_url()
             if cover:
@@ -381,7 +393,54 @@ class AllAccessTrackDownloader(threading.Thread):
         log.info("Done downloading multi-part track: %s" % self.path)
         self.writer.close()
 
+
+def getDeviceId(verbose=False):
+    cred_path = os.path.join(os.path.expanduser('~'), '.gmusicfs')
+    if not os.path.isfile(cred_path):
+        raise NoCredentialException(
+            'No username/password was specified. No config file could '
+            'be found either. Try creating %s and specifying your '
+            'username/password there. Make sure to chmod 600.'
+            % cred_path)
+    if not oct(os.stat(cred_path)[os.path.stat.ST_MODE]).endswith('00'):
+        raise NoCredentialException(
+            'Config file is not protected. Please run: '
+            'chmod 600 %s' % cred_path)
+    config = ConfigParser.ConfigParser()
+    config.read(cred_path)
+    username = config.get('credentials','username')
+    password = config.get('credentials','password')
+    if not username or not password:
+        raise NoCredentialException(
+            'No username/password could be read from config file'
+            ': %s' % cred_path)
+
+    api = GoogleMusicWebAPI(debug_logging=verbose)
+    log.info('Logging in...')
+    api.login(username, password)
+    log.info('Login successful.')
+
+    for device in api.get_registered_devices():
+        if not device['name']:
+            device['name']='NoName'
+        if device['id'][1]=='x':
+            print '%s : %s' % (device['name'], device['id'])
+
 def main():
+    log.setLevel(logging.WARNING)
+    logging.getLogger('gmusicapi').setLevel(logging.WARNING)
+    logging.getLogger('fuse').setLevel(logging.WARNING)
+    logging.getLogger('requests.packages.urllib3').setLevel(logging.WARNING)
+
+    parser = argparse.ArgumentParser(description='GMusicFS', add_help=False)
+    parser.add_argument('--deviceid', action='store_true', dest='deviceId')
+    parser.add_argument('-h', action="store_true", dest='h')
+
+    args = parser.parse_args()
+    if args.deviceId:
+        getDeviceId()
+        return
+
     parser = argparse.ArgumentParser(description='GMusicFS')
     parser.add_argument('mountpoint', help='The location to mount to')
     parser.add_argument('-f', '--foreground', dest='foreground',
@@ -399,6 +458,9 @@ def main():
                         action='store_true', dest='allusers')
     parser.add_argument('--nolibrary', help='Don\'t scan the library at launch',
                         action='store_true', dest='nolibrary')
+    parser.add_argument('--deviceid', help='Get the device ids bounded to your account',
+                        action='store_true', dest='deviceId')
+
     args = parser.parse_args()
 
     mountpoint = os.path.abspath(args.mountpoint)
@@ -422,6 +484,10 @@ def main():
         logging.getLogger('fuse').setLevel(logging.WARNING)
         logging.getLogger('requests.packages.urllib3').setLevel(logging.WARNING)
         verbosity = 0
+
+
+
+
     fs = GMusicFS(mountpoint, true_file_size=args.true_file_size, verbose=verbosity, scan_library= not args.nolibrary)
     try:
         fuse = FUSE(fs, mountpoint, foreground=args.foreground,

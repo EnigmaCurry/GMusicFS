@@ -12,30 +12,30 @@ written by Simon Weber.
  * Creates a directory of ```artists/<name of artist>/<albums>/<tracks>```.
  * Access the cover image for each album as ```cover.jpg``` in the album directory.
  * Stream each track as an mp3 directly from the filesystem.
- 
+
 ### What this is useful for:
 
  * Copying a few tracks from Google Music directly to your hard drive
    (using a file manager or ```cp``` directly.)
  * Streaming music with ```mplayer``` or another simple music player.
- 
+
 ### What this is NOT useful for (yet..):
 
  * Importing all your music into iTunes, banshee, amarok etc. These
    big media players will attempt to read all the ID3 information from
-   the files and not knowing that all the files are on a remote server. 
+   the files and not knowing that all the files are on a remote server.
    It might work, but it's going to be extremely inefficient and this
    might bring down the banhammer from Google..
- * Importing new music. The filesystem is read-only (this might change 
+ * Importing new music. The filesystem is read-only (this might change
    in a new version.)
  * Random-access within the mp3 files. You cannot seek() inside the
    mp3 files, they will only stream from the beginning of the file.
 
 GMusicFS doesn't implement any caching. Copying a file should always work,
-because latency doesn't matter, but if you're streaming the music, you 
+because latency doesn't matter, but if you're streaming the music, you
 may want to turn on your player's caching system (eg. mplayer -cache 200.)
 You may notice a few blips in the sound during the first few seconds of
-each song without it. If you're on a low latency connection this might not 
+each song without it. If you're on a low latency connection this might not
 affect you.
 
 Installation
@@ -74,10 +74,17 @@ Create a config file in ```~/.gmusicfs```:
 [credentials]
 username = your_username@gmail.com
 password = your_password
+deviceId = your_mobile_id
 ```
 
 If you use 2-factor authentication, make sure you use an application
 specific password.
+
+To find the device id, you may run gmusicfs with the parameter
+--deviceid after providing login informations.
+```
+gmusicfs --deviceid
+```
 
 Secure the configuration file so that no one else can read it
 (GMusicFS will complain about this if you forget):
@@ -101,6 +108,8 @@ optional arguments:
   -v, --verbose       Be a little verbose
   -vv, --veryverbose  Be very verbose
   -t, --truefilesize  Report true filesizes (slower directory reads)
+  --nolibrary         Don't scan the library at launch
+  --deviceid          Get the mobile device ids bounded to your account
 ```
 
 Example
