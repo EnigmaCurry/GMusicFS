@@ -59,7 +59,7 @@ class Album(object):
         return self.__tracks
 
     def get_track(self, filename):
-        """Get the track name corresponding to a filename 
+        """Get the track name corresponding to a filename
         (eg. '001 - brilliant track name.mp3')"""
         m = self.__filename_re.match(filename)
         if m:
@@ -84,7 +84,7 @@ class Album(object):
 
     def get_year(self):
         """Get the year of the album.
-        Aggregate all the track years and pick the most popular year 
+        Aggregate all the track years and pick the most popular year
         among them"""
         years = {} # year -> count
         for track in self.get_tracks():
@@ -92,7 +92,7 @@ class Album(object):
             if y:
                 count = years.get(y, 0)
                 years[y] = count + 1
-        top_years = sorted(years.items(), 
+        top_years = sorted(years.items(),
                            key=operator.itemgetter(1), reverse=True)
         try:
             top_year = top_years[0][0]
@@ -105,7 +105,7 @@ class Album(object):
 
 class MusicLibrary(object):
     'Read information about your Google Music library'
-    
+
     def __init__(self, username=None, password=None,
                  true_file_size=False, scan=True, verbose=0):
         self.verbose = False
@@ -113,6 +113,9 @@ class MusicLibrary(object):
             self.verbose = True
 
         self.__login_and_setup(username, password)
+
+        self.__artists = {} # 'artist name' -> {'album name' : Album(), ...}
+        self.__albums = [] # [Album(), ...]
         if scan:
             self.rescan()
         self.true_file_size = true_file_size
@@ -144,12 +147,12 @@ class MusicLibrary(object):
                 raise NoCredentialException(
                     'No username/password could be read from config file'
                     ': %s' % cred_path)
-                
+
         self.api = GoogleMusicAPI(debug_logging=self.verbose)
         log.info('Logging in...')
         self.api.login(username, password)
         log.info('Login successful.')
-        
+
     def __aggregate_albums(self):
         'Get all the tracks in the library, parse into artist and album dicts'
         all_artist_albums = {} # 'Artist|||Album' -> Album()
@@ -196,8 +199,8 @@ class MusicLibrary(object):
 
 class GMusicFS(LoggingMixIn, Operations):
     'Google Music Filesystem'
-    def __init__(self, path, username=None, password=None, 
-                 true_file_size=False, verbose=0):
+    def __init__(self, path, username=None, password=None,
+                 true_file_size=False, verbose=0, scan_library=True):
         Operations.__init__(self)
         self.artist_dir = re.compile('^/artists/(?P<artist>[^/]+)$')
         self.artist_album_dir = re.compile(
@@ -210,8 +213,8 @@ class GMusicFS(LoggingMixIn, Operations):
         self.__open_files = {} # path -> urllib2_obj
 
         # login to google music and parse the tracks:
-        self.library = MusicLibrary(username, password, 
-                                    true_file_size=true_file_size, verbose=verbose)
+        self.library = MusicLibrary(username, password,
+                                    true_file_size=true_file_size, verbose=verbose, scan=scan_library)
         log.info("Filesystem ready : %s" % path)
 
     def cleanup(self):
@@ -277,7 +280,7 @@ class GMusicFS(LoggingMixIn, Operations):
         else:
             RuntimeError('unexpected opening of path: %r' % path)
 
-        #Check for multi-part 
+        #Check for multi-part
         if len(urls) > 1:
             self.__open_files[fh] = self.__open_multi_part(urls, path)
         else:
@@ -302,7 +305,7 @@ class GMusicFS(LoggingMixIn, Operations):
         if u:
             u.close()
             del self.__open_files[fh]
-    
+
     def read(self, path, size, offset, fh):
         u = self.__open_files.get(fh, None)
         if u is None:
@@ -342,7 +345,7 @@ class GMusicFS(LoggingMixIn, Operations):
                 parts['artist']][parts['album']]
             files = ['.','..']
             for track in album.get_tracks(get_size=True):
-                files.append('%03d - %s.mp3' % (track['track'], 
+                files.append('%03d - %s.mp3' % (track['track'],
                                                 formatNames(track['titleNorm'])))
             # Include cover image:
             cover = album.get_cover_url()
@@ -381,7 +384,7 @@ class AllAccessTrackDownloader(threading.Thread):
 def main():
     parser = argparse.ArgumentParser(description='GMusicFS')
     parser.add_argument('mountpoint', help='The location to mount to')
-    parser.add_argument('-f', '--foreground', dest='foreground', 
+    parser.add_argument('-f', '--foreground', dest='foreground',
                         action="store_true",
                         help='Don\'t daemonize, run in the foreground.')
     parser.add_argument('-v', '--verbose', help='Be a little verbose',
@@ -394,10 +397,12 @@ def main():
     parser.add_argument('--allusers', help='Allow all system users access to files'
                         ' (Requires user_allow_other set in /etc/fuse.conf)',
                         action='store_true', dest='allusers')
+    parser.add_argument('--nolibrary', help='Don\'t scan the library at launch',
+                        action='store_true', dest='nolibrary')
     args = parser.parse_args()
 
     mountpoint = os.path.abspath(args.mountpoint)
-    
+
     # Set verbosity:
     if args.veryverbose:
         log.setLevel(logging.DEBUG)
@@ -417,9 +422,9 @@ def main():
         logging.getLogger('fuse').setLevel(logging.WARNING)
         logging.getLogger('requests.packages.urllib3').setLevel(logging.WARNING)
         verbosity = 0
-    fs = GMusicFS(mountpoint, true_file_size=args.true_file_size, verbose=verbosity)
+    fs = GMusicFS(mountpoint, true_file_size=args.true_file_size, verbose=verbosity, scan_library= not args.nolibrary)
     try:
-        fuse = FUSE(fs, mountpoint, foreground=args.foreground, 
+        fuse = FUSE(fs, mountpoint, foreground=args.foreground,
                     ro=True, nothreads=True, allow_other=args.allusers)
     finally:
         fs.cleanup()
