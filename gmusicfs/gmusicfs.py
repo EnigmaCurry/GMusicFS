@@ -228,7 +228,7 @@ class GMusicFS(LoggingMixIn, Operations):
         st = {
             'st_mode' : (S_IFDIR | 0755),
             'st_nlink' : 2 }
-        date = time.time()
+        date = 0 # Make the date really old, so that cp -u works correctly.
         st['st_ctime'] = st['st_mtime'] = st['st_atime'] = date
 
         if path == '/':
