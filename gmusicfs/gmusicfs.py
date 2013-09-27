@@ -246,7 +246,7 @@ class GMusicFS(LoggingMixIn, Operations):
             track = album.get_track(parts['track'])
             st = {
                 'st_mode' : (S_IFREG | 0444),
-                'st_size' : track.get('bytes', 200000000),
+                'st_size' : track.get('bytes', 2000000000),
                 'st_ctime' : track['creationDate'] / 1000000,
                 'st_mtime' : track['creationDate'] / 1000000,
                 'st_atime' : track['lastPlayed'] / 1000000}
