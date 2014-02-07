@@ -3,6 +3,7 @@
 import os
 import re
 import sys
+import struct
 import urllib2
 import ConfigParser
 from errno import ENOENT
@@ -22,6 +23,11 @@ import fifo
 
 logging.basicConfig(level=logging.DEBUG)
 log = logging.getLogger('gmusicfs')
+
+# Size of the ID3v1 trailer appended to the mp3 file (at read time)
+# Add the size to the reported size of the mp3 file so read function receive correct params.
+# The read function will read size bytes - 128 since we have to generate this 128 bytes.
+ID3V1_TRAILER_SIZE = 128
 
 def formatNames(string_from):
     return re.sub('/', '-', string_from)
@@ -52,10 +58,10 @@ class Album(object):
         if get_size and self.library.true_file_size:
             for t in self.__tracks:
                 if not t.has_key('bytes'):
-                    r = urllib2.Request(self.get_track_stream(t))
+                    r = urllib2.Request(self.get_track_stream(t)[0])
                     r.get_method = lambda: 'HEAD'
                     u = urllib2.urlopen(r)
-                    t['bytes'] = int(u.headers['Content-Length'])
+                    t['bytes'] = int(u.headers['Content-Length']) + ID3V1_TRAILER_SIZE
         return self.__tracks
 
     def get_track(self, filename):
@@ -81,7 +87,16 @@ class Album(object):
         except:
             url = None
         return url
-
+        
+    def get_cover_size(self):
+        'Get the album cover size'	
+	if self.library.true_file_size:
+	    r = urllib2.Request(self.get_cover_url())
+	    r.get_method = lambda: 'HEAD'
+	    u = urllib2.urlopen(r)
+	    return int(u.headers['Content-Length'])
+	return None
+	    
     def get_year(self):
         """Get the year of the album.
         Aggregate all the track years and pick the most popular year 
@@ -251,9 +266,15 @@ class GMusicFS(LoggingMixIn, Operations):
                 'st_mtime' : track['creationDate'] / 1000000,
                 'st_atime' : track['lastPlayed'] / 1000000}
         elif artist_album_image_m:
+            parts = artist_album_image_m.groupdict()
+            album = self.library.get_artists()[
+                parts['artist']][parts['album']]
+            cover_size = album.get_cover_size()
+            if cover_size is None:
+            	cover_size = 10000000
             st = {
                 'st_mode' : (S_IFREG | 0444),
-                'st_size' : 10000000 }
+                'st_size' : cover_size }
         else:
             raise FuseOSError(ENOENT)
 
@@ -307,15 +328,26 @@ class GMusicFS(LoggingMixIn, Operations):
         u = self.__open_files.get(fh, None)
         if u is None:
             raise RuntimeError('unexpected path: %r' % path)
+        artist_album_track_m = self.artist_album_track.match(path)
+        if artist_album_track_m and (int(u.headers['Content-Length']) < (offset + size)):
+            parts = artist_album_track_m.groupdict()
+            album = self.library.get_artists()[
+                parts['artist']][parts['album']]
+            track = album.get_track(parts['track'])
+            # Genre tag is always set to Other as Google MP3 genre tags are not id3v1 id.
+            id3v1 = struct.pack("!3s30s30s30s4s30sb", 'TAG', str(track['title']), str(track['artist']),
+        	str(track['album']), str(0), str(track['comment']), 12)
+            buf = u.read(size - ID3V1_TRAILER_SIZE) + id3v1
         else:
             buf = u.read(size)
-            try:
-                u.bytes_read += size
-            except AttributeError:
-                # Only urllib2 files need this attribute, harmless to
-                # ignore it.
-                pass
-            return buf
+            
+        try:
+            u.bytes_read += size
+        except AttributeError:
+            # Only urllib2 files need this attribute, harmless to
+            # ignore it.
+            pass
+        return buf
 
     def readdir(self, path, fh):
         artist_dir_m = self.artist_dir.match(path)
